@@ -1,0 +1,42 @@
+[
+    {
+        "id": 1,
+        "name": "Wireless Headphones",
+        "category": "Electronics",
+        "price": 2499,
+        "stock": 15,
+        "image": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e"
+    },
+    {
+        "id": 2,
+        "name": "Smart Watch",
+        "category": "Electronics",
+        "price": 3999,
+        "stock": 10,
+        "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30"
+    },
+    {
+        "id": 3,
+        "name": "Running Shoes",
+        "category": "Fashion",
+        "price": 2999,
+        "stock": 20,
+        "image": "https://images.unsplash.com/photo-1542291026-7eec264c27ff"
+    },
+    {
+        "id": 4,
+        "name": "Backpack",
+        "category": "Accessories",
+        "price": 1499,
+        "stock": 12,
+        "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62"
+    },
+    {
+        "id": 5,
+        "name": "Earbuds",
+        "category": "Electronics",
+        "price": 299.0,
+        "stock": 5,
+        "image": "data/images/c2a2e1aa9b2d41b7aa6cba8f7f5f53f0.jpg"
+    }
+]

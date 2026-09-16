@@ -1,0 +1,16 @@
+[
+    {
+        "id": 1,
+        "name": "Admin",
+        "email": "admin@example.com",
+        "password": "pbkdf2_sha256$600000$00112233445566778899aabbccddeeff$3e9702369b6d8628008b886fa7d0eabad9761969bee6b27d42e9a7c1c8a11cf6",
+        "role": "admin"
+    },
+    {
+        "id": 2,
+        "name": "Esha Patel",
+        "email": "patel@gmail.com",
+        "password": "pbkdf2_sha256$600000$05d603e95410a5aaeaf165462cf2b553$68db9fe3442ec5b6596e19ee8cea50ffffefdcae6c6db9e6942dca18d97c7650",
+        "role": "user"
+    }
+]
