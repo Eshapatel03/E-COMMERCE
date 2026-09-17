@@ -83,10 +83,37 @@ function AuthPage({ mode, onModeChange, onLogin, onSignup, message }) {
   );
 }
 
+function ProductCard({ product, getImageUrl, onSelect, onAddToCart }) {
+  return (
+    <div className="product-card">
+      <div
+        className="product-image"
+        onClick={() => onSelect(product)}
+        role="button"
+        tabIndex="0"
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") onSelect(product);
+        }}
+      >
+        <img src={getImageUrl(product.image)} alt={product.name} />
+      </div>
+      <div className="product-info">
+        <p className="product-category">{product.category}</p>
+        <h3>{product.name}</h3>
+        <div className="product-bottom">
+          <span className="price">${product.price}</span>
+          <button onClick={() => onAddToCart(product)}>Add to Cart</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [products, setProducts] = useState([]);
   const [productPage, setProductPage] = useState(1);
   const [productPageCount, setProductPageCount] = useState(1);
+  const [productTotal, setProductTotal] = useState(0);
   const [availableCategories, setAvailableCategories] = useState([]);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
@@ -132,6 +159,7 @@ function App() {
       .then((data) => {
         setProducts(data.products || data);
         setProductPageCount(data.total_pages || 1);
+        setProductTotal(data.total || (data.products || data).length);
         setAvailableCategories(data.categories || []);
       })
       .catch((error) => console.error("Error:", error));
@@ -227,7 +255,21 @@ function App() {
     availableCategories,
   ]);
 
+  const categoryCards = useMemo(
+    () => availableCategories.map((item) => ({
+      name: item,
+      product: products.find((product) => product.category === item),
+    })),
+    [availableCategories, products]
+  );
+
   const filteredProducts = products;
+
+  const selectCategory = (item) => {
+    setProductPage(1);
+    setCategory(item);
+    document.getElementById("shop")?.scrollIntoView({ behavior: "smooth" });
+  };
 
   const addToCart = (product) => {
     const existingProduct = cart.find((item) => item.id === product.id);
@@ -362,11 +404,9 @@ function App() {
         throw new Error(data.detail || "Unable to add product.");
       }
 
-      setAdminMessage({
-        type: "success",
-        text: `${data.name} was ${editingProductId ? "updated" : "added"} successfully.`,
-      });
+      const successMessage = `${data.name} was ${editingProductId ? "updated" : "added"} successfully.`;
       resetAdminForm();
+      setAdminMessage({ type: "success", text: successMessage });
       event.target.reset();
       loadProducts(productPage);
       const adminResponse = await fetch(`${API_BASE_URL}/products?page_size=100`, {
@@ -540,25 +580,35 @@ function App() {
 
           <div className="admin-content">
             <form className="admin-form" key={adminFormKey} onSubmit={submitProduct}>
-              <label>
-                Product Name
-                <input
-                  name="name"
-                  value={adminForm.name}
-                  onChange={updateAdminForm}
-                  required
-                />
-              </label>
-              <label>
-                Category
-                <input
-                  name="category"
-                  value={adminForm.category}
-                  onChange={updateAdminForm}
-                  required
-                />
-              </label>
-              <div className="admin-form-row">
+              <div className="admin-form-header">
+                <p className="section-label">PRODUCT DETAILS</p>
+                <h2>{editingProductId ? "Edit Product" : "Add New Product"}</h2>
+                <p>
+                  {editingProductId
+                    ? "Update the product information below"
+                    : "Add product details to your store"}
+                </p>
+              </div>
+
+              <div className="admin-form-fields">
+                <label>
+                  Product Name
+                  <input
+                    name="name"
+                    value={adminForm.name}
+                    onChange={updateAdminForm}
+                    required
+                  />
+                </label>
+                <label>
+                  Category
+                  <input
+                    name="category"
+                    value={adminForm.category}
+                    onChange={updateAdminForm}
+                    required
+                  />
+                </label>
                 <label>
                   Price
                   <input
@@ -584,8 +634,12 @@ function App() {
                   />
                 </label>
               </div>
-              <label>
-                Product Image
+
+              <div className="admin-image-section">
+                <div>
+                  <h3>Product Image</h3>
+                  <p>Upload a clear image for your store listing.</p>
+                </div>
                 <input
                   name="image"
                   type="file"
@@ -593,21 +647,31 @@ function App() {
                   onChange={updateAdminForm}
                   required={!editingProductId}
                 />
-              </label>
-              <button
-                className="admin-submit-button"
-                disabled={isSubmittingProduct}
-              >
-                {isSubmittingProduct
-                  ? editingProductId ? "Saving Product..." : "Adding Product..."
-                  : editingProductId ? "Save Product" : "Add Product"}
-              </button>
-              {adminMessage && (
-                <p className={`admin-message ${adminMessage.type}`}>
-                  {adminMessage.text}
-                </p>
-              )}
+              </div>
+
+              <div className="admin-form-actions">
+                <button
+                  className="admin-cancel-button"
+                  type="button"
+                  onClick={resetAdminForm}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="admin-submit-button"
+                  disabled={isSubmittingProduct}
+                >
+                  {isSubmittingProduct
+                    ? editingProductId ? "Saving Product..." : "Adding Product..."
+                    : editingProductId ? "Update Product" : "Add Product"}
+                </button>
+              </div>
             </form>
+            {adminMessage && (
+              <p className={`admin-message ${adminMessage.type}`} role="status">
+                {adminMessage.text}
+              </p>
+            )}
             <div className="admin-list">
               <h2>Products</h2>
               {adminProducts.map((product) => (
@@ -711,6 +775,38 @@ function App() {
             </div>
           </section>
 
+          <section className="category-section" aria-labelledby="category-heading">
+            <div className="category-heading">
+              <p className="section-label">SHOP BY CATEGORY</p>
+              <h2 id="category-heading">Find something made for your everyday</h2>
+            </div>
+            <div className="category-grid">
+              {categoryCards.map(({ name, product }) => (
+                <button
+                  className={`category-card ${category === name ? "active" : ""}`}
+                  key={name}
+                  onClick={() => selectCategory(name)}
+                  style={product ? { backgroundImage: `url(${getImageUrl(product.image)})` } : undefined}
+                >
+                  <span className="category-card-overlay" />
+                  <span className="category-card-content">
+                    <span className="category-card-name">{name}</span>
+                    <span className="category-card-description">
+                      Thoughtful pieces for modern living.
+                    </span>
+                    <span className="category-card-link">Explore →</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button
+              className={`all-products-button ${category === "All" ? "active" : ""}`}
+              onClick={() => selectCategory("All")}
+            >
+              All Products
+            </button>
+          </section>
+
           <section className="shop-section" id="shop">
             <div className="section-heading">
               <div>
@@ -747,24 +843,13 @@ function App() {
 
             <div className="product-grid">
               {filteredProducts.map((product) => (
-                <div className="product-card" key={product.id}>
-                  <div
-                    className="product-image"
-                    onClick={() => setSelectedProduct(product)}
-                  >
-                    <img src={getImageUrl(product.image)} alt={product.name} />
-                  </div>
-                  <div className="product-info">
-                    <p className="product-category">{product.category}</p>
-                    <h3>{product.name}</h3>
-                    <div className="product-bottom">
-                      <span className="price">${product.price}</span>
-                      <button onClick={() => addToCart(product)}>
-                        Add to Cart
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  getImageUrl={getImageUrl}
+                  onSelect={setSelectedProduct}
+                  onAddToCart={addToCart}
+                />
               ))}
             </div>
 
@@ -776,6 +861,10 @@ function App() {
             )}
             {productPageCount > 1 && (
               <div className="pagination">
+                <p>
+                  Showing {((productPage - 1) * 8) + 1}–
+                  {Math.min(productPage * 8, productTotal)} of {productTotal} products
+                </p>
                 <button
                   disabled={productPage === 1}
                   onClick={() => setProductPage((page) => page - 1)}
@@ -804,22 +893,27 @@ function App() {
           </section>
 
           <section className="features" id="features">
+            <div className="features-heading">
+              <p className="section-label">WHY US</p>
+              <h2>Made for a simpler way to shop</h2>
+            </div>
             <div className="feature">
-              <div className="feature-icon">✦</div>
+              <div className="feature-icon" aria-hidden="true">✦</div>
               <h3>Curated Products</h3>
-              <p>Quality products selected for everyday needs.</p>
+              <p>Carefully selected products for everyday needs.</p>
             </div>
             <div className="feature">
-              <div className="feature-icon">↗</div>
+              <div className="feature-icon" aria-hidden="true">↗</div>
               <h3>Fast Delivery</h3>
-              <p>Simple and reliable shopping experience.</p>
+              <p>Quick and reliable delivery to your doorstep.</p>
             </div>
             <div className="feature">
-              <div className="feature-icon">♡</div>
-              <h3>Customer First</h3>
-              <p>Designed around a smooth customer experience.</p>
+              <div className="feature-icon" aria-hidden="true">♡</div>
+              <h3>Secure Shopping</h3>
+              <p>A simple and secure shopping experience.</p>
             </div>
           </section>
+
         </>
       )}
 

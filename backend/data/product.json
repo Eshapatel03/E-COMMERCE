@@ -32,11 +32,27 @@
         "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62"
     },
     {
-        "id": 5,
-        "name": "Earbuds",
+        "id": 6,
+        "name": "Smart TV",
         "category": "Electronics",
-        "price": 299.0,
-        "stock": 5,
-        "image": "data/images/c2a2e1aa9b2d41b7aa6cba8f7f5f53f0.jpg"
+        "price": 49999.82,
+        "stock": 2,
+        "image": "data/images/0c8910574ee9491da4b0d6bb921f8536.jpg"
+    },
+    {
+        "id": 7,
+        "name": "Watch",
+        "category": "Accessories",
+        "price": 1000.0,
+        "stock": 10,
+        "image": "data/images/dca4639c0cf04fd48d352090226e3445.jpg"
+    },
+    {
+        "id": 5,
+        "name": "Sunglasses",
+        "category": "Fashion",
+        "price": 500.0,
+        "stock": 1,
+        "image": "data/images/b5b7b1345e8d4bbe85843edd387be8a5.jpg"
     }
 ]
