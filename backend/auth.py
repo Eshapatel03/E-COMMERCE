@@ -1,44 +1,44 @@
 import hashlib
 import hmac
-import json
 import secrets
-from pathlib import Path
+
+import psycopg
+
+from backend.database import get_connection
 
 
 class AuthService:
-    """Stores users in their own JSON file and manages simple in-memory sessions."""
 
     def __init__(self):
-        self.data_dir = Path(__file__).resolve().parent / "data"
-        self.file_path = self.data_dir / "users.json"
         self.sessions = {}
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-        if not self.file_path.exists():
-            self._save_users([])
 
     def signup(self, name, email, password):
-        users = self._load_users()
         normalized_email = email.strip().lower()
-        if any(user["email"] == normalized_email for user in users):
-            raise ValueError("Email already registered")
-
-        user = {
-            "id": self._next_id(users),
-            "name": name.strip(),
-            "email": normalized_email,
-            "password": self._hash_password(password),
-            "role": "user",
-        }
-        users.append(user)
-        self._save_users(users)
+        try:
+            with get_connection() as connection:
+                user = connection.execute(
+                    """
+                    INSERT INTO users (name, email, password, role)
+                    VALUES (%s, %s, %s, 'user')
+                    RETURNING id, name, email, password, role
+                    """,
+                    (
+                        name.strip(),
+                        normalized_email,
+                        self._hash_password(password),
+                    ),
+                ).fetchone()
+        except psycopg.errors.UniqueViolation as error:
+            raise ValueError("Email already registered") from error
         return self._public_user(user)
 
     def login(self, email, password):
         normalized_email = email.strip().lower()
-        user = next(
-            (item for item in self._load_users() if item["email"] == normalized_email),
-            None,
-        )
+        with get_connection() as connection:
+            user = connection.execute(
+                "SELECT id, name, email, password, role FROM users WHERE email = %s",
+                (normalized_email,),
+            ).fetchone()
         if user is None or not self._verify_password(password, user["password"]):
             raise ValueError("Invalid email or password")
         if user.get("role") not in {"user", "admin"}:
@@ -57,18 +57,11 @@ class AuthService:
         user_id = self.sessions.get(token)
         if user_id is None:
             return None
-        return next(
-            (user for user in self._load_users() if user["id"] == user_id),
-            None,
-        )
-
-    def _load_users(self):
-        with self.file_path.open() as file:
-            return json.load(file)
-
-    def _save_users(self, users):
-        with self.file_path.open("w") as file:
-            json.dump(users, file, indent=4)
+        with get_connection() as connection:
+            return connection.execute(
+                "SELECT id, name, email, password, role FROM users WHERE id = %s",
+                (user_id,),
+            ).fetchone()
 
     @staticmethod
     def _hash_password(password):
@@ -103,6 +96,3 @@ class AuthService:
             "role": user["role"],
         }
 
-    @staticmethod
-    def _next_id(users):
-        return max((user["id"] for user in users), default=0) + 1

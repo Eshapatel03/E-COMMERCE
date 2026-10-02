@@ -54,5 +54,37 @@
         "price": 500.0,
         "stock": 1,
         "image": "data/images/b5b7b1345e8d4bbe85843edd387be8a5.jpg"
+    },
+    {
+        "id": 8,
+        "name": "CHANEL Perfume",
+        "category": "Accessories",
+        "price": 25000.0,
+        "stock": 4,
+        "image": "data/images/3dc6f8c13dd4490f85e5b756d3b6d67d.jpg"
+    },
+    {
+        "id": 9,
+        "name": "Perfume",
+        "category": "Accessories",
+        "price": 9000.0,
+        "stock": 3,
+        "image": "data/images/4eff0fbe4c254203b5b1b09c2bd1132f.jpg"
+    },
+    {
+        "id": 10,
+        "name": "Makeup kit",
+        "category": "Fashion",
+        "price": 50000.0,
+        "stock": 10,
+        "image": "data/images/bc8a711eee574ea6836c30fa45fd5d0e.jpg"
+    },
+    {
+        "id": 11,
+        "name": "Skincare kit",
+        "category": "Fashion",
+        "price": 30000.0,
+        "stock": 0,
+        "image": "data/images/a37b656e06f7429ebbce27deb26730ef.jpg"
     }
 ]

@@ -12,5 +12,12 @@
         "email": "patel@gmail.com",
         "password": "pbkdf2_sha256$600000$05d603e95410a5aaeaf165462cf2b553$68db9fe3442ec5b6596e19ee8cea50ffffefdcae6c6db9e6942dca18d97c7650",
         "role": "user"
+    },
+    {
+        "id": 3,
+        "name": "Eshaa",
+        "email": "esha@gmail.com",
+        "password": "pbkdf2_sha256$600000$55a5518350a4dca82ffaf4f301364fd0$740e50ff88c962a3941e2cccd84fe10ea94566869c50888c98eae05fa3e67f22",
+        "role": "user"
     }
 ]

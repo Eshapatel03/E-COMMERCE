@@ -119,7 +119,9 @@ function App() {
   const [category, setCategory] = useState("All");
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [cart, setCart] = useState([]);
-  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isCartOpen, setIsCartOpen] = useState(
+    () => window.location.hash === "#cart"
+  );
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isProfilePageOpen, setIsProfilePageOpen] = useState(false);
@@ -146,6 +148,54 @@ function App() {
     const token = localStorage.getItem("lumora_token");
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
+
+  const openCart = () => {
+    if (window.location.hash !== "#cart") {
+      window.history.pushState(
+        { ...window.history.state, cartRoute: true },
+        "",
+        `${window.location.pathname}${window.location.search}#cart`
+      );
+    }
+    setIsCartOpen(true);
+    setIsAdminOpen(false);
+    setIsProfilePageOpen(false);
+  };
+
+  const closeCart = () => {
+    if (window.location.hash === "#cart") {
+      if (window.history.state?.cartRoute) {
+        window.history.back();
+        return;
+      }
+
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${window.location.pathname}${window.location.search}#shop`
+      );
+    }
+    setIsCartOpen(false);
+  };
+
+  useEffect(() => {
+    const syncCartWithUrl = () => {
+      const cartIsOpen = window.location.hash === "#cart";
+      setIsCartOpen(cartIsOpen);
+      if (cartIsOpen) {
+        setIsAdminOpen(false);
+        setIsProfilePageOpen(false);
+      }
+    };
+
+    window.addEventListener("hashchange", syncCartWithUrl);
+    window.addEventListener("popstate", syncCartWithUrl);
+    syncCartWithUrl();
+    return () => {
+      window.removeEventListener("hashchange", syncCartWithUrl);
+      window.removeEventListener("popstate", syncCartWithUrl);
+    };
+  }, []);
 
   const loadProducts = useCallback((page) => {
     const params = new URLSearchParams({
@@ -194,7 +244,7 @@ function App() {
       localStorage.setItem("lumora_user", JSON.stringify(data.user));
       setAuthUser(data.user);
       setIsAdminOpen(data.user.role === "admin");
-      setIsCartOpen(false);
+      setIsCartOpen(window.location.hash === "#cart");
       setIsProfileOpen(false);
       setIsProfilePageOpen(false);
       setAuthMode("login");
@@ -239,7 +289,7 @@ function App() {
       localStorage.removeItem("lumora_user");
       setAuthUser(null);
       setIsAdminOpen(false);
-      setIsCartOpen(false);
+      closeCart();
       setIsProfileOpen(false);
       setIsProfilePageOpen(false);
       setAuthMode("login");
@@ -468,7 +518,7 @@ function App() {
             {authUser.role === "admin" && (
               <button className="nav-admin-link" onClick={() => {
                 setIsAdminOpen(true);
-                setIsCartOpen(false);
+                closeCart();
                 setIsProfilePageOpen(false);
               }}>
                 Admin / Dashboard
@@ -488,7 +538,7 @@ function App() {
                     setIsProfilePageOpen(true);
                     setIsProfileOpen(false);
                     setIsAdminOpen(false);
-                    setIsCartOpen(false);
+                    closeCart();
                   }}>
                     Profile
                   </button>
@@ -497,7 +547,7 @@ function App() {
                       setIsAdminOpen(true);
                       setIsProfileOpen(false);
                       setIsProfilePageOpen(false);
-                      setIsCartOpen(false);
+                      closeCart();
                     }}>
                       Admin Dashboard
                     </button>
@@ -512,11 +562,7 @@ function App() {
         {authUser && (
           <button
             className="cart-summary"
-            onClick={() => {
-              setIsCartOpen(true);
-              setIsAdminOpen(false);
-              setIsProfilePageOpen(false);
-            }}
+            onClick={openCart}
             aria-label={`${cartCount} items in cart`}
           >
             <span>Cart</span>
@@ -698,7 +744,7 @@ function App() {
             </div>
             <button
               className="continue-shopping-button"
-              onClick={() => setIsCartOpen(false)}
+              onClick={closeCart}
             >
               Continue Shopping
             </button>
@@ -981,6 +1027,20 @@ function App() {
       <footer id="contact">
         <div className="footer-logo">LUMORA</div>
         <p>Modern products. Simple shopping.</p>
+        <div className="footer-details">
+          <div>
+            <h2>Location</h2>
+            <address>Ahmedabad, Gujarat, India</address>
+          </div>
+          <div>
+            <h2>Call Us</h2>
+            <a href="tel:+912222233333">+91 22222 33333</a>
+          </div>
+          <div>
+            <h2>Support Hours</h2>
+            <p>24/7</p>
+          </div>
+        </div>
         <p>© 2026 Lumora Ecommerce</p>
       </footer>
     </div>

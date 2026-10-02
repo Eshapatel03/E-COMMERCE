@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -9,9 +11,17 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from backend.models import Product
 from backend.auth import AuthService
+from backend.database import initialize_database
 from backend.services import ProductService
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    initialize_database()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 app.mount(
     "/images",
     StaticFiles(directory=Path(__file__).resolve().parent / "data" / "images"),
@@ -120,18 +130,16 @@ def get_products(
     page: int = Query(1, ge=1),
     page_size: int = Query(8, ge=1, le=100),
 ):
-    matching_products = product_service.search_products(keyword, category)
-    total = len(matching_products)
-    start = (page - 1) * page_size
+    matching_products, total = product_service.search_products(
+        keyword, category, page, page_size
+    )
     return {
-        "products": matching_products[start:start + page_size],
+        "products": matching_products,
         "total": total,
         "page": page,
         "page_size": page_size,
         "total_pages": (total + page_size - 1) // page_size,
-        "categories": sorted({
-            product.category for product in product_service.get_products()
-        }),
+        "categories": product_service.get_categories(),
     }
 
 
@@ -152,7 +160,7 @@ def get_product(product_id: int):
 async def add_product(
     name: str = Form(...),
     category: str = Form(...),
-    price: float = Form(...),
+    price: Decimal = Form(...),
     stock: int = Form(...),
     image: UploadFile = File(...),
     _admin=Depends(require_admin),
@@ -229,7 +237,7 @@ async def edit_product(
     product_id: int,
     name: str = Form(...),
     category: str = Form(...),
-    price: float = Form(...),
+    price: Decimal = Form(...),
     stock: int = Form(...),
     image: UploadFile | None = File(None),
     _admin=Depends(require_admin),

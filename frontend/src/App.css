@@ -1176,6 +1176,41 @@ footer {
   letter-spacing: 3px;
 }
 
+.footer-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px;
+  max-width: 720px;
+  margin: 28px auto;
+  padding: 22px 0;
+  border-top: 1px solid #3b3b3b;
+  border-bottom: 1px solid #3b3b3b;
+  text-align: left;
+}
+
+.footer-details h2 {
+  margin: 0 0 8px;
+  color: white;
+  font-size: 14px;
+}
+
+.footer-details address,
+.footer-details a,
+.footer-details p {
+  margin: 0;
+  color: #aaa;
+  font-size: 14px;
+  font-style: normal;
+}
+
+.footer-details a {
+  text-decoration: none;
+}
+
+.footer-details a:hover {
+  color: white;
+}
+
 footer p {
   color: #aaa;
   font-size: 13px;
@@ -1203,6 +1238,13 @@ footer p {
 
   .category-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .footer-details {
+    grid-template-columns: 1fr;
+    gap: 18px;
   }
 }
 
