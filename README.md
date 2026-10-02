@@ -15,12 +15,6 @@ string in the backend terminal:
 $env:DATABASE_URL = "postgresql://postgres:your-password@localhost:5432/lumora"
 ```
 
-Import the existing products and users from JSON:
-
-```powershell
-.\.venv\Scripts\python.exe -m backend.import_json_data
-```
-
 The backend creates its tables when it starts. Keep `DATABASE_URL` set in the
 same terminal whenever you run the backend.
 
@@ -45,12 +39,8 @@ New users sign up with a name, email, and strong password. The backend validates
 the fields and stores users in PostgreSQL. Passwords are stored as
 PBKDF2-SHA256 hashes, never as plain text.
 
-The initial admin account is:
-
-- Email: `admin@example.com`
-- Password: `Admin123!`
-
-Change or remove this development account before deploying the application.
+Ensure an admin account is configured securely in PostgreSQL before deploying
+the application.
 
 Login returns a short-lived-in-process session token to the frontend. The
 frontend stores that token while the user is logged in and sends it when an
