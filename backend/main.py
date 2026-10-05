@@ -4,15 +4,25 @@ from pathlib import Path
 from uuid import uuid4
 
 import re
+import warnings
+from io import BytesIO
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from PIL import Image
+from PIL.Image import DecompressionBombError, DecompressionBombWarning
+from PIL import UnidentifiedImageError
 from backend.models import Product
-from backend.auth import AuthService
+from backend.config import get_settings
 from backend.database import initialize_database
+from backend.dependencies import auth_service, get_current_user, require_admin, extract_bearer_token
+from backend.commerce import CommerceError
+from backend.commerce_routes import router as commerce_router
 from backend.services import ProductService
+from backend.webhook_routes import router as webhook_router
 
 
 @asynccontextmanager
@@ -22,6 +32,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.include_router(commerce_router)
+app.include_router(webhook_router)
 app.mount(
     "/images",
     StaticFiles(directory=Path(__file__).resolve().parent / "data" / "images"),
@@ -30,19 +42,26 @@ app.mount(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=list(get_settings().frontend_origins),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
 )
 
 product_service = ProductService()
-auth_service = AuthService()
+MAX_IMAGE_SIZE = 5 * 1024 * 1024
+IMAGE_EXTENSIONS = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+IMAGE_FORMATS = {
+    "image/jpeg": "JPEG",
+    "image/png": "PNG",
+    "image/webp": "WEBP",
+    "image/gif": "GIF",
+}
 
 
 class SignupRequest(BaseModel):
@@ -78,20 +97,6 @@ def _validate_signup(request: SignupRequest):
         raise HTTPException(status_code=400, detail="Password must contain a special character")
 
 
-def _get_current_user(authorization: str | None = Header(default=None)):
-    token = authorization.removeprefix("Bearer ").strip() if authorization else None
-    user = auth_service.get_user_for_token(token)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Please log in to continue")
-    return user
-
-
-def require_admin(user=Depends(_get_current_user)):
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access is required")
-    return user
-
-
 @app.post("/auth/signup", status_code=201)
 def signup(request: SignupRequest):
     _validate_signup(request)
@@ -112,10 +117,26 @@ def login(request: LoginRequest):
 
 
 @app.post("/auth/logout")
-def logout(authorization: str | None = Header(default=None)):
-    token = authorization.removeprefix("Bearer ").strip() if authorization else None
+def logout(
+    authorization: str | None = Header(default=None),
+    _user=Depends(get_current_user),
+):
+    token = extract_bearer_token(authorization)
     auth_service.logout(token)
     return {"message": "Logged out successfully"}
+
+
+@app.get("/auth/me")
+def current_user(user=Depends(get_current_user)):
+    return {"user": auth_service.public_user(user)}
+
+
+@app.exception_handler(CommerceError)
+async def commerce_error_handler(_, error: CommerceError):
+    return JSONResponse(
+        status_code=error.status_code,
+        content={"detail": error.detail},
+    )
 
 
 @app.get("/")
@@ -176,28 +197,13 @@ async def add_product(
         raise HTTPException(status_code=400, detail="Price must be greater than 0")
     if stock < 0:
         raise HTTPException(status_code=400, detail="Stock cannot be negative")
-    if not image.filename:
-        raise HTTPException(status_code=400, detail="Product image is required")
     if product_service.has_duplicate(name, category):
         raise HTTPException(
             status_code=400,
             detail="A product with this name already exists in this category",
         )
 
-    allowed_types = {"image/jpeg", "image/png", "image/webp", "image/gif"}
-    if image.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail="Image must be a JPG, PNG, WEBP, or GIF file",
-        )
-
-    image_content = await image.read()
-    if not image_content:
-        raise HTTPException(status_code=400, detail="Product image cannot be empty")
-    if len(image_content) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Product image must be 5 MB or smaller")
-
-    extension = Path(image.filename).suffix.lower()
+    image_content, extension = await _read_validated_image(image)
     filename = f"{uuid4().hex}{extension}"
     image_path = product_service.save_product_image(filename, image_content)
     product = Product(
@@ -209,27 +215,59 @@ async def add_product(
         image=image_path,
     )
 
-    return product_service.add_product(product)
+    try:
+        return product_service.add_product(product)
+    except Exception:
+        product_service.delete_product_image(image_path)
+        raise
 
 
 async def _validate_image(image: UploadFile):
     if not image.filename:
         raise HTTPException(status_code=400, detail="Product image cannot be empty")
-    allowed_types = {"image/jpeg", "image/png", "image/webp", "image/gif"}
-    if image.content_type not in allowed_types:
+    content, extension = await _read_validated_image(image)
+    return product_service.save_product_image(
+        f"{uuid4().hex}{extension}",
+        content,
+    )
+
+
+async def _read_validated_image(image: UploadFile):
+    if not image.filename:
+        raise HTTPException(status_code=400, detail="Product image is required")
+    if image.content_type not in IMAGE_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail="Image must be a JPG, PNG, WEBP, or GIF file",
         )
-    content = await image.read()
+    content = bytearray()
+    while chunk := await image.read(64 * 1024):
+        if len(content) + len(chunk) > MAX_IMAGE_SIZE:
+            raise HTTPException(status_code=400, detail="Product image must be 5 MB or smaller")
+        content.extend(chunk)
     if not content:
         raise HTTPException(status_code=400, detail="Product image cannot be empty")
-    if len(content) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Product image must be 5 MB or smaller")
-    return product_service.save_product_image(
-        f"{uuid4().hex}{Path(image.filename).suffix.lower()}",
-        content,
-    )
+    actual_type = None
+    if content.startswith(b"\xff\xd8\xff"):
+        actual_type = "image/jpeg"
+    elif content.startswith(b"\x89PNG\r\n\x1a\n"):
+        actual_type = "image/png"
+    elif len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        actual_type = "image/webp"
+    elif content.startswith((b"GIF87a", b"GIF89a")):
+        actual_type = "image/gif"
+    if actual_type != image.content_type:
+        raise HTTPException(status_code=400, detail="Image content does not match its file type")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DecompressionBombWarning)
+            with Image.open(BytesIO(content)) as decoded_image:
+                if decoded_image.format != IMAGE_FORMATS[actual_type]:
+                    raise HTTPException(status_code=400, detail="Invalid image file")
+                decoded_image.verify()
+    except (DecompressionBombError, DecompressionBombWarning, UnidentifiedImageError, OSError, ValueError) as error:
+        raise HTTPException(status_code=400, detail="Invalid image file") from error
+    return bytes(content), IMAGE_EXTENSIONS[actual_type]
 
 
 @app.put("/products/{product_id}")
@@ -259,9 +297,14 @@ async def edit_product(
             detail="A product with this name already exists in this category",
         )
     image_path = await _validate_image(image) if image else None
-    return product_service.update_product(
-        product_id, name, category, price, stock, image_path
-    )
+    try:
+        return product_service.update_product(
+            product_id, name, category, price, stock, image_path
+        )
+    except Exception:
+        if image_path:
+            product_service.delete_product_image(image_path)
+        raise
 
 
 @app.delete("/products/{product_id}")

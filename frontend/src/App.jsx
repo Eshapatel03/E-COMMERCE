@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import "./App.css";
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 const getErrorMessage = (detail, fallback) => {
   if (typeof detail === "string") return detail;
@@ -119,12 +119,19 @@ function App() {
   const [category, setCategory] = useState("All");
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [cart, setCart] = useState([]);
+  const [cartTotal, setCartTotal] = useState(0);
+  const [checkoutMessage, setCheckoutMessage] = useState("");
+  const [checkoutNotice, setCheckoutNotice] = useState("");
+  const [isStartingCheckout, setIsStartingCheckout] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(
     () => window.location.hash === "#cart"
   );
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isProfilePageOpen, setIsProfilePageOpen] = useState(false);
+  const [isOrdersOpen, setIsOrdersOpen] = useState(false);
+  const [orders, setOrders] = useState([]);
+  const [ordersMessage, setOrdersMessage] = useState("");
   const [adminForm, setAdminForm] = useState({
     name: "",
     category: "",
@@ -148,6 +155,101 @@ function App() {
     const token = localStorage.getItem("lumora_token");
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
+  const isAuthenticated = Boolean(authUser);
+  const setCartFromResponse = useCallback((data) => {
+    setCart((data.items || []).map((item) => ({ ...item, id: item.product_id })));
+    setCartTotal(Number(data.total || 0));
+  }, []);
+  const loadCart = useCallback(async () => {
+    const response = await fetch(`${API_BASE_URL}/cart`, { headers: authHeaders() });
+    if (response.status === 401) {
+      localStorage.removeItem("lumora_token");
+      localStorage.removeItem("lumora_user");
+      setAuthUser(null);
+      setCart([]);
+      setCartTotal(0);
+      return false;
+    }
+    if (!response.ok) throw new Error("Unable to load your cart");
+    setCartFromResponse(await response.json());
+    return true;
+  }, [setCartFromResponse]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    let active = true;
+    const restoreSession = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/me`, { headers: authHeaders() });
+        if (response.status === 401) {
+          localStorage.removeItem("lumora_token");
+          localStorage.removeItem("lumora_user");
+          if (active) {
+            setAuthUser(null);
+            setCart([]);
+            setCartTotal(0);
+          }
+          return;
+        }
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!active) return;
+        setAuthUser(data.user);
+        localStorage.setItem("lumora_user", JSON.stringify(data.user));
+        await loadCart();
+      } catch (error) {
+        console.error("Unable to restore account:", error);
+      }
+    };
+    restoreSession();
+    return () => { active = false; };
+  }, [isAuthenticated, loadCart]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkoutStatus = params.get("checkout");
+    const sessionId = params.get("session_id");
+    const orderId = params.get("order_id");
+    if (checkoutStatus === "success" && sessionId) {
+      const confirmOrder = async () => {
+        try {
+          const response = await fetch(
+            `${API_BASE_URL}/checkout/session/${encodeURIComponent(sessionId)}`,
+            { headers: authHeaders() }
+          );
+          const data = await response.json();
+          if (!response.ok) throw new Error(getErrorMessage(data.detail, "Unable to check payment status"));
+          setCheckoutNotice(
+            data.status === "paid"
+              ? "Payment confirmed. Your order is placed."
+              : `Payment status: ${data.status.replaceAll("_", " ")}.`
+          );
+          sessionStorage.removeItem("lumora_checkout_key");
+          await loadCart();
+        } catch (error) {
+          setCheckoutNotice(error.message);
+        }
+      };
+      confirmOrder();
+    } else if (checkoutStatus === "cancelled" && orderId) {
+      const cancelOrder = async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/orders/${encodeURIComponent(orderId)}/cancel`, {
+            method: "POST",
+            headers: authHeaders(),
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(getErrorMessage(data.detail, "Unable to cancel checkout"));
+          setCheckoutNotice(`Checkout ${data.status}. Your cart is available to update.`);
+          sessionStorage.removeItem("lumora_checkout_key");
+          await loadCart();
+        } catch (error) {
+          setCheckoutNotice(error.message);
+        }
+      };
+      cancelOrder();
+    }
+  }, [loadCart]);
 
   const openCart = () => {
     if (window.location.hash !== "#cart") {
@@ -160,6 +262,24 @@ function App() {
     setIsCartOpen(true);
     setIsAdminOpen(false);
     setIsProfilePageOpen(false);
+    setIsOrdersOpen(false);
+  };
+
+  const openOrders = async () => {
+    setOrdersMessage("");
+    setIsOrdersOpen(true);
+    setIsCartOpen(false);
+    setIsAdminOpen(false);
+    setIsProfilePageOpen(false);
+    setIsProfileOpen(false);
+    try {
+      const response = await fetch(`${API_BASE_URL}/orders`, { headers: authHeaders() });
+      const data = await response.json();
+      if (!response.ok) throw new Error(getErrorMessage(data.detail, "Unable to load orders"));
+      setOrders(data);
+    } catch (error) {
+      setOrdersMessage(error.message);
+    }
   };
 
   const closeCart = () => {
@@ -245,6 +365,7 @@ function App() {
       setAuthUser(data.user);
       setIsAdminOpen(data.user.role === "admin");
       setIsCartOpen(window.location.hash === "#cart");
+      setIsOrdersOpen(false);
       setIsProfileOpen(false);
       setIsProfilePageOpen(false);
       setAuthMode("login");
@@ -288,7 +409,10 @@ function App() {
       localStorage.removeItem("lumora_token");
       localStorage.removeItem("lumora_user");
       setAuthUser(null);
+      setCart([]);
+      setCartTotal(0);
       setIsAdminOpen(false);
+      setIsOrdersOpen(false);
       closeCart();
       setIsProfileOpen(false);
       setIsProfilePageOpen(false);
@@ -321,81 +445,73 @@ function App() {
     document.getElementById("shop")?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const addToCart = (product) => {
-    const existingProduct = cart.find((item) => item.id === product.id);
-
-    if (existingProduct && existingProduct.quantity >= product.stock) {
-      return;
+  const changeCart = async (productId, method, quantity) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/cart/items${method === "POST" ? "" : `/${productId}`}`, {
+        method,
+        headers: { ...authHeaders(), ...(method !== "DELETE" ? { "Content-Type": "application/json" } : {}) },
+        ...(method !== "DELETE" ? { body: JSON.stringify(method === "POST" ? { product_id: productId, quantity } : { quantity }) } : {}),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(getErrorMessage(data.detail, "Unable to update your cart"));
+      setCartFromResponse(data);
+      setCheckoutNotice("");
+      return true;
+    } catch (error) {
+      setCartMessage(error.message);
+      window.setTimeout(() => setCartMessage(""), 3000);
+      return false;
     }
+  };
 
-    setCart((currentCart) => {
-      const currentProduct = currentCart.find(
-        (item) => item.id === product.id
-      );
-
-      if (currentProduct) {
-        return currentCart.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        );
-      }
-
-      return [...currentCart, { ...product, quantity: 1 }];
-    });
-    setCartMessage(`${product.name} added to cart`);
-    window.setTimeout(() => setCartMessage(""), 2200);
+  const addToCart = async (product) => {
+    if (await changeCart(product.id, "POST", 1)) {
+      setCartMessage(`${product.name} added to cart`);
+      window.setTimeout(() => setCartMessage(""), 2200);
+    }
   };
 
   const increaseQuantity = (productId) => {
-    setCart((currentCart) =>
-      currentCart.map((item) => {
-        if (item.id !== productId) {
-          return item;
-        }
-
-        if (item.quantity >= item.stock) {
-          return item;
-        }
-
-        return {
-          ...item,
-          quantity: item.quantity + 1,
-        };
-      })
-    );
+    const item = cart.find((entry) => entry.id === productId);
+    if (item) changeCart(productId, "PATCH", item.quantity + 1);
   };
 
   const decreaseQuantity = (productId) => {
-    setCart((currentCart) =>
-      currentCart
-        .map((item) => {
-          if (item.id !== productId) {
-            return item;
-          }
-
-          return {
-            ...item,
-            quantity: item.quantity - 1,
-          };
-        })
-        .filter((item) => item.quantity > 0)
-    );
+    const item = cart.find((entry) => entry.id === productId);
+    if (!item) return;
+    if (item.quantity === 1) changeCart(productId, "DELETE");
+    else changeCart(productId, "PATCH", item.quantity - 1);
   };
 
-  const removeFromCart = (productId) => {
-    setCart((currentCart) =>
-      currentCart.filter((item) => item.id !== productId)
-    );
+  const removeFromCart = (productId) => changeCart(productId, "DELETE");
+
+  const startCheckout = async () => {
+    setCheckoutMessage("");
+    setIsStartingCheckout(true);
+    try {
+      const idempotencyKey = sessionStorage.getItem("lumora_checkout_key") || crypto.randomUUID();
+      sessionStorage.setItem("lumora_checkout_key", idempotencyKey);
+      const response = await fetch(`${API_BASE_URL}/checkout/session`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Idempotency-Key": idempotencyKey },
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        const error = new Error(getErrorMessage(data.detail, "Unable to start checkout"));
+        error.status = response.status;
+        throw error;
+      }
+      window.location.assign(data.checkout_url);
+    } catch (error) {
+      if (error.status === 409) sessionStorage.removeItem("lumora_checkout_key");
+      setCheckoutMessage(error.message);
+    } finally {
+      setIsStartingCheckout(false);
+    }
   };
 
   const cartCount = cart.reduce(
     (total, item) => total + item.quantity,
-    0
-  );
-
-  const cartTotal = cart.reduce(
-    (total, item) => total + item.price * item.quantity,
     0
   );
 
@@ -512,12 +628,13 @@ function App() {
           </div>
         ) : (
           <div className="nav-links">
-            <a href="#shop" onClick={() => { setIsCartOpen(false); setIsAdminOpen(false); setIsProfilePageOpen(false); }}>Shop</a>
-            <a href="#features" onClick={() => { setIsCartOpen(false); setIsAdminOpen(false); setIsProfilePageOpen(false); }}>Why Us</a>
+            <a href="#shop" onClick={() => { setIsCartOpen(false); setIsAdminOpen(false); setIsProfilePageOpen(false); setIsOrdersOpen(false); }}>Shop</a>
+            <a href="#features" onClick={() => { setIsCartOpen(false); setIsAdminOpen(false); setIsProfilePageOpen(false); setIsOrdersOpen(false); }}>Why Us</a>
             <a href="#contact">Contact</a>
             {authUser.role === "admin" && (
               <button className="nav-admin-link" onClick={() => {
                 setIsAdminOpen(true);
+                setIsOrdersOpen(false);
                 closeCart();
                 setIsProfilePageOpen(false);
               }}>
@@ -538,15 +655,18 @@ function App() {
                     setIsProfilePageOpen(true);
                     setIsProfileOpen(false);
                     setIsAdminOpen(false);
+                    setIsOrdersOpen(false);
                     closeCart();
                   }}>
                     Profile
                   </button>
+                  <button onClick={openOrders}>My Orders</button>
                   {authUser.role === "admin" && (
                     <button onClick={() => {
                       setIsAdminOpen(true);
                       setIsProfileOpen(false);
                       setIsProfilePageOpen(false);
+                      setIsOrdersOpen(false);
                       closeCart();
                     }}>
                       Admin Dashboard
@@ -605,6 +725,49 @@ function App() {
               Back to Shop
             </button>
           </div>
+        </section>
+      ) : isOrdersOpen ? (
+        <section className="orders-page">
+          <div className="orders-page-header">
+            <div>
+              <p className="section-label">ACCOUNT HISTORY</p>
+              <h1>My Orders</h1>
+            </div>
+            <button className="continue-shopping-button" onClick={() => setIsOrdersOpen(false)}>
+              Back to Shop
+            </button>
+          </div>
+          {ordersMessage && <p className="admin-message error" role="alert">{ordersMessage}</p>}
+          {orders.length === 0 && !ordersMessage ? (
+            <p className="empty-cart">No orders yet.</p>
+          ) : (
+            <div className="orders-list">
+              {orders.map((order) => (
+                <article className="order-history-item" key={order.id}>
+                  <div className="order-history-heading">
+                    <div>
+                      <strong>Order {order.id.slice(0, 8)}</strong>
+                      <time dateTime={order.created_at}>{new Date(order.created_at).toLocaleDateString()}</time>
+                    </div>
+                    <span className={`order-status ${order.status}`}>{order.status.replaceAll("_", " ")}</span>
+                  </div>
+                  <div className="order-history-products">
+                    {order.items.map((item) => (
+                      <p key={`${order.id}-${item.product_name}`}>
+                        {item.product_name} <span>× {item.quantity}</span>
+                      </p>
+                    ))}
+                  </div>
+                  <strong>
+                    {new Intl.NumberFormat("en-US", {
+                      style: "currency",
+                      currency: order.currency.toUpperCase(),
+                    }).format(Number(order.total))}
+                  </strong>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       ) : isAdminOpen ? (
         <section className="admin-page">
@@ -792,9 +955,14 @@ function App() {
               <div className="cart-page-summary">
                 <span>Total</span>
                 <strong>${cartTotal.toFixed(2)}</strong>
-                <button className="checkout-button">
-                  Proceed to Checkout
+                <button
+                  className="checkout-button"
+                  onClick={startCheckout}
+                  disabled={isStartingCheckout}
+                >
+                  {isStartingCheckout ? "Connecting to Stripe..." : "Proceed to Checkout"}
                 </button>
+                {checkoutMessage && <p className="auth-message" role="alert">{checkoutMessage}</p>}
               </div>
             </div>
           ) : (
@@ -963,9 +1131,9 @@ function App() {
         </>
       )}
 
-      {cartMessage && (
+      {(checkoutNotice || cartMessage) && (
         <div className="cart-toast" role="status">
-          {cartMessage}
+          {checkoutNotice || cartMessage}
         </div>
       )}
 

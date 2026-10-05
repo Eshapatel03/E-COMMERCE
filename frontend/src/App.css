@@ -222,6 +222,81 @@ button {
   border: 1px solid #e8e6df;
 }
 
+.orders-page {
+  min-height: 70vh;
+  padding: 56px 7%;
+}
+
+.orders-page-header,
+.order-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.orders-page-header {
+  margin-bottom: 30px;
+}
+
+.orders-list {
+  border-top: 1px solid #e8e6df;
+}
+
+.order-history-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px 24px;
+  padding: 22px 0;
+  border-bottom: 1px solid #e8e6df;
+}
+
+.order-history-heading {
+  grid-column: 1 / -1;
+}
+
+.order-history-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.order-history-heading time,
+.order-history-products span {
+  color: #777;
+  font-size: 13px;
+}
+
+.order-history-products p {
+  margin: 4px 0;
+}
+
+.order-status {
+  text-transform: capitalize;
+  font-size: 13px;
+}
+
+.order-status.paid,
+.order-status.fulfilled {
+  color: #28734a;
+}
+
+.order-status.payment_failed,
+.order-status.cancelled,
+.order-status.expired {
+  color: #9a3f35;
+}
+
+@media (max-width: 600px) {
+  .orders-page {
+    padding: 36px 5%;
+  }
+
+  .order-history-item {
+    gap: 12px;
+  }
+}
+
 .profile-page-card h1 {
   margin: 0 0 30px;
   font-family: "Playfair Display", serif;
