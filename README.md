@@ -1,6 +1,6 @@
 # Lumora Ecommerce
 
-FastAPI + PostgreSQL backend and React/Vite storefront. PostgreSQL is the source of truth for accounts, catalog data, carts, orders, inventory, and payments. Product image bytes use a separate storage adapter; the current adapter stores files locally and PostgreSQL stores their paths.
+FastAPI + PostgreSQL backend and React/Vite storefront. PostgreSQL is the source of truth for accounts, catalog data, carts, orders, inventory, and payments. Product image URLs are stored in PostgreSQL; image files are loaded directly by the browser from their HTTPS hosts.
 
 ## Structure
 
@@ -14,7 +14,6 @@ backend/
 	database.py        Psycopg connections and migration runner
 	dependencies.py    Bearer authentication and admin authorization
 	services.py        Product service
-	storage.py         Local image-storage adapter
 	webhook_routes.py  Stripe webhook verification
 frontend/src/
 	App.jsx            Storefront, account, cart, checkout, and order history
@@ -85,6 +84,8 @@ Signup validates email/password fields and stores salted PBKDF2-SHA256 hashes. L
 
 The frontend loads and changes the cart through authenticated APIs. At checkout, the backend reads current products and prices, locks inventory rows, creates the order and immutable line-item snapshots, reserves stock, and commits before requesting a hosted Stripe Checkout Session. An idempotency key protects retries. The browser receives only the hosted Checkout URL and never supplies an authoritative price, total, user ID, or payment status.
 
+For a product image, use an HTTPS URL from a host that permits direct image embedding (for example, an image URL provided by your approved image host). Paste that URL in the admin product form. The URL string is stored in PostgreSQL; the image itself is fetched directly by each visitor's browser and is not copied to this application's disk. Verify image licensing and host terms. Existing `data/images/...` records are still served for backwards compatibility until their products are changed to remote URLs.
+
 Stripe webhooks are verified against the raw request body and `Stripe-Signature`. Successful payment events update an order only after matching the server-calculated amount and currency. Failed/expired/cancelled flows use guarded state changes and restore reserved stock once. Event IDs prevent duplicate webhook delivery from applying changes twice. A Checkout return URL is not treated as proof of payment; the frontend queries the authenticated order API.
 
 ## API
@@ -109,14 +110,14 @@ npm run lint
 npm run build
 ```
 
-The current automated suite does not require PostgreSQL or Stripe credentials. It covers auth/authorization checks, API access scoping, signed/invalid webhook requests, money conversion, PostgreSQL migration syntax, and upload validation. It does not replace database-backed concurrency/transaction tests or an end-to-end Stripe test-mode purchase.
+The current automated suite does not require PostgreSQL or Stripe credentials. It covers auth/authorization checks, API access scoping, signed/invalid webhook requests, money conversion, PostgreSQL migration syntax, and image URL validation. It does not replace database-backed concurrency/transaction tests or an end-to-end Stripe test-mode purchase.
 
 ## Deployment Boundaries
 
 This is a stronger internship/local application, not yet production-certified. Before deployment:
 
 - Provide HTTPS, production-only CORS origins, secret management, PostgreSQL backups, and a migration release process. Startup migrations currently require DDL permissions.
-- Replace local image files with durable object storage and configure backups/lifecycle policies. The local adapter is not durable across ephemeral deployments.
+- Use image URLs from a trusted HTTPS image host and ensure you have permission to use those images. Existing legacy `/images/...` paths may still be served, but new product changes do not save image files locally.
 - Add database-backed integration tests, webhook monitoring/reconciliation, and an operational recovery path for payments whose events cannot be applied.
 - Add rate limiting, login abuse controls, email verification, password recovery, and a secure admin-provisioning process.
 - Browser bearer tokens remain in `localStorage`; this is vulnerable to token theft if an XSS flaw is introduced. Consider an HttpOnly/Secure cookie design with CSRF controls for a public deployment.

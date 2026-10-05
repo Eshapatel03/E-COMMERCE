@@ -1,17 +1,8 @@
-from pathlib import Path
-
 from backend.database import get_connection
 from backend.models import Product
-from backend.storage import LocalImageStorage
 
 
 class ProductService:
-
-    def __init__(self):
-        self.data_dir = Path(__file__).resolve().parent / "data"
-        self.images_dir = self.data_dir / "images"
-        self.images_dir.mkdir(parents=True, exist_ok=True)
-        self.image_storage = LocalImageStorage(self.images_dir)
 
     def get_products(self):
         with get_connection() as connection:
@@ -91,11 +82,6 @@ class ProductService:
 
     def update_product(self, product_id, name, category, price, stock, image=None):
         with get_connection() as connection:
-            current = connection.execute(
-                "SELECT image FROM products WHERE id = %s", (product_id,)
-            ).fetchone()
-            if current is None:
-                return None
             row = connection.execute(
                 """
                 UPDATE products
@@ -108,40 +94,14 @@ class ProductService:
             ).fetchone()
             if row is None:
                 return None
-        if image is not None:
-            self._remove_local_image_if_unreferenced(current["image"])
         return Product(**row)
 
     def delete_product(self, product_id):
         with get_connection() as connection:
             deleted_product = connection.execute(
-                "DELETE FROM products WHERE id = %s "
-                "RETURNING id, name, category, price, stock, image",
+                "DELETE FROM products WHERE id = %s RETURNING id",
                 (product_id,),
             ).fetchone()
             if deleted_product is None:
                 return None
-        self._remove_local_image_if_unreferenced(deleted_product["image"])
         return True
-
-    def save_product_image(self, filename, content):
-        return self.image_storage.save(filename, content)
-
-    def delete_product_image(self, image):
-        self.image_storage.delete(image)
-
-    def _remove_local_image_if_unreferenced(self, image):
-        with get_connection() as connection:
-            row = connection.execute(
-                """
-                SELECT EXISTS (
-                    SELECT 1 FROM products WHERE image = %s
-                    UNION ALL
-                    SELECT 1 FROM order_items WHERE product_image = %s
-                ) AS referenced
-                """,
-                (image, image),
-            ).fetchone()
-        if row["referenced"]:
-            return
-        self.image_storage.delete(image)

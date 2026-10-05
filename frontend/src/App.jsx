@@ -137,7 +137,7 @@ function App() {
     category: "",
     price: "",
     stock: "",
-    image: null,
+    image: "",
   });
   const [adminMessage, setAdminMessage] = useState(null);
   const [adminProducts, setAdminProducts] = useState([]);
@@ -516,10 +516,10 @@ function App() {
   );
 
   const updateAdminForm = (event) => {
-    const { name, value, files } = event.target;
+    const { name, value } = event.target;
     setAdminForm((currentForm) => ({
       ...currentForm,
-      [name]: files ? files[0] : value,
+      [name]: value,
     }));
   };
 
@@ -529,7 +529,7 @@ function App() {
       category: "",
       price: "",
       stock: "",
-      image: null,
+      image: "",
     });
     setEditingProductId(null);
     setAdminMessage(null);
@@ -541,7 +541,7 @@ function App() {
     setAdminMessage(null);
 
     if (!editingProductId && !adminForm.image) {
-      setAdminMessage({ type: "error", text: "Please select a product image." });
+      setAdminMessage({ type: "error", text: "Please provide a product image URL." });
       return;
     }
 
@@ -550,9 +550,7 @@ function App() {
     formData.append("category", adminForm.category);
     formData.append("price", adminForm.price);
     formData.append("stock", adminForm.stock);
-    if (adminForm.image) {
-      formData.append("image", adminForm.image);
-    }
+    if (adminForm.image) formData.append("image", adminForm.image);
 
     setIsSubmittingProduct(true);
     try {
@@ -594,7 +592,7 @@ function App() {
       category: product.category,
       price: product.price,
       stock: product.stock,
-      image: null,
+      image: product.image.startsWith("https://") ? product.image : "",
     });
     setAdminMessage(null);
   };
@@ -847,15 +845,19 @@ function App() {
               <div className="admin-image-section">
                 <div>
                   <h3>Product Image</h3>
-                  <p>Upload a clear image for your store listing.</p>
+                  <p>Paste a direct HTTPS image URL.</p>
                 </div>
-                <input
-                  name="image"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  onChange={updateAdminForm}
-                  required={!editingProductId}
-                />
+                <label>
+                  Image URL
+                  <input
+                    name="image"
+                    type="url"
+                    placeholder="https://images.example.com/product.jpg"
+                    value={adminForm.image}
+                    onChange={updateAdminForm}
+                    required={!editingProductId}
+                  />
+                </label>
               </div>
 
               <div className="admin-form-actions">

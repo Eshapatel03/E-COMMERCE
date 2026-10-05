@@ -1,20 +1,15 @@
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
-from uuid import uuid4
+from urllib.parse import urlparse
 
 import re
-import warnings
-from io import BytesIO
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from PIL import Image
-from PIL.Image import DecompressionBombError, DecompressionBombWarning
-from PIL import UnidentifiedImageError
 from backend.models import Product
 from backend.config import get_settings
 from backend.database import initialize_database
@@ -49,19 +44,6 @@ app.add_middleware(
 )
 
 product_service = ProductService()
-MAX_IMAGE_SIZE = 5 * 1024 * 1024
-IMAGE_EXTENSIONS = {
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-    "image/gif": ".gif",
-}
-IMAGE_FORMATS = {
-    "image/jpeg": "JPEG",
-    "image/png": "PNG",
-    "image/webp": "WEBP",
-    "image/gif": "GIF",
-}
 
 
 class SignupRequest(BaseModel):
@@ -183,7 +165,7 @@ async def add_product(
     category: str = Form(...),
     price: Decimal = Form(...),
     stock: int = Form(...),
-    image: UploadFile = File(...),
+    image: str = Form(...),
     _admin=Depends(require_admin),
 ):
     name = name.strip()
@@ -203,71 +185,30 @@ async def add_product(
             detail="A product with this name already exists in this category",
         )
 
-    image_content, extension = await _read_validated_image(image)
-    filename = f"{uuid4().hex}{extension}"
-    image_path = product_service.save_product_image(filename, image_content)
+    image_url = _validate_image_url(image)
     product = Product(
         id=0,
         name=name,
         category=category,
         price=price,
         stock=stock,
-        image=image_path,
-    )
-
-    try:
-        return product_service.add_product(product)
-    except Exception:
-        product_service.delete_product_image(image_path)
-        raise
-
-
-async def _validate_image(image: UploadFile):
-    if not image.filename:
-        raise HTTPException(status_code=400, detail="Product image cannot be empty")
-    content, extension = await _read_validated_image(image)
-    return product_service.save_product_image(
-        f"{uuid4().hex}{extension}",
-        content,
+        image=image_url,
     )
 
 
-async def _read_validated_image(image: UploadFile):
-    if not image.filename:
-        raise HTTPException(status_code=400, detail="Product image is required")
-    if image.content_type not in IMAGE_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail="Image must be a JPG, PNG, WEBP, or GIF file",
-        )
-    content = bytearray()
-    while chunk := await image.read(64 * 1024):
-        if len(content) + len(chunk) > MAX_IMAGE_SIZE:
-            raise HTTPException(status_code=400, detail="Product image must be 5 MB or smaller")
-        content.extend(chunk)
-    if not content:
-        raise HTTPException(status_code=400, detail="Product image cannot be empty")
-    actual_type = None
-    if content.startswith(b"\xff\xd8\xff"):
-        actual_type = "image/jpeg"
-    elif content.startswith(b"\x89PNG\r\n\x1a\n"):
-        actual_type = "image/png"
-    elif len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
-        actual_type = "image/webp"
-    elif content.startswith((b"GIF87a", b"GIF89a")):
-        actual_type = "image/gif"
-    if actual_type != image.content_type:
-        raise HTTPException(status_code=400, detail="Image content does not match its file type")
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", DecompressionBombWarning)
-            with Image.open(BytesIO(content)) as decoded_image:
-                if decoded_image.format != IMAGE_FORMATS[actual_type]:
-                    raise HTTPException(status_code=400, detail="Invalid image file")
-                decoded_image.verify()
-    except (DecompressionBombError, DecompressionBombWarning, UnidentifiedImageError, OSError, ValueError) as error:
-        raise HTTPException(status_code=400, detail="Invalid image file") from error
-    return bytes(content), IMAGE_EXTENSIONS[actual_type]
+def _validate_image_url(image: str):
+    image_url = image.strip()
+    parsed_url = urlparse(image_url)
+    if (
+        len(image_url) > 2048
+        or parsed_url.scheme != "https"
+        or not parsed_url.hostname
+        or not parsed_url.netloc
+        or parsed_url.username is not None
+        or parsed_url.password is not None
+    ):
+        raise HTTPException(status_code=400, detail="Image must be a valid HTTPS URL")
+    return image_url
 
 
 @app.put("/products/{product_id}")
@@ -277,7 +218,7 @@ async def edit_product(
     category: str = Form(...),
     price: Decimal = Form(...),
     stock: int = Form(...),
-    image: UploadFile | None = File(None),
+    image: str | None = Form(None),
     _admin=Depends(require_admin),
 ):
     name, category = name.strip(), category.strip()
@@ -296,15 +237,10 @@ async def edit_product(
             status_code=400,
             detail="A product with this name already exists in this category",
         )
-    image_path = await _validate_image(image) if image else None
-    try:
-        return product_service.update_product(
-            product_id, name, category, price, stock, image_path
-        )
-    except Exception:
-        if image_path:
-            product_service.delete_product_image(image_path)
-        raise
+    image_url = _validate_image_url(image) if image else None
+    return product_service.update_product(
+        product_id, name, category, price, stock, image_url
+    )
 
 
 @app.delete("/products/{product_id}")
